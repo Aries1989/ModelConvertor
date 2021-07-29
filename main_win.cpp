@@ -1,4 +1,4 @@
-#include "main_win.h"
+﻿#include "main_win.h"
 #include "ui_main_win.h"
 #include <QFileDialog>
 #include <QStandardPaths>
@@ -13,7 +13,7 @@ const QString g_strCompressProgramName = "7z.exe";
 const QString g_strTempDirName = "tmp";
 const QString g_strDstFileExt = ".cim";
 
-main_win::main_win(QWidget *parent)
+main_win::main_win(QString strFilePath, QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::main_win)
 {
@@ -92,6 +92,8 @@ main_win::main_win(QWidget *parent)
 
         ui->edtLog->appendPlainText(mapState[newState]);
     });
+
+    ui->edtFilePath->setText(strFilePath);
 }
 
 main_win::~main_win()

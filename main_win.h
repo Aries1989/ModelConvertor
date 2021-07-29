@@ -1,4 +1,4 @@
-#ifndef MAIN_WIN_H
+﻿#ifndef MAIN_WIN_H
 #define MAIN_WIN_H
 
 #include <QWidget>
@@ -13,7 +13,7 @@ class main_win : public QWidget
     Q_OBJECT
 
 public:
-    main_win(QWidget *parent = nullptr);
+    main_win(QString strFilePath = "", QWidget *parent = nullptr);
     ~main_win();
 
 private:
