@@ -7,18 +7,99 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QDesktopServices>
+#include <QDebug>
 
 const QString g_strConvertorProgramName = "Transcode.CPP.exe";
 const QString g_strCompressProgramName = "7z.exe";
 const QString g_strTempDirName = "tmp";
 const QString g_strDstFileExt = ".cim";
 
-main_win::main_win(QString strFilePath, QWidget *parent)
+main_win::main_win(QString strFilePath, QString strDstDir, QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::main_win)
+    , m_strFilePath(strFilePath)
+    , m_strDstDir(strDstDir)
 {
     ui->setupUi(this);
+    m_bNoUi = !strFilePath.isEmpty();
 
+    Init(strFilePath);
+}
+
+main_win::~main_win()
+{
+    delete ui;
+}
+
+void main_win::Compress2Cim()
+{
+    QFileInfo fi(m_strFilePath);
+    QString strFileName = fi.fileName();
+    QString strDstDir = (m_strDstDir.isEmpty() ? fi.dir().path() : m_strDstDir);
+    QString strDstFilePath = strDstDir + "/" + strFileName + ".zip";
+
+    QString strAppDir = QCoreApplication::applicationDirPath();
+    QString strApp7z = strAppDir + "/" + g_strCompressProgramName;
+    m_process.setProgram(strApp7z);
+
+    QString strWoringDir = strAppDir + "/" + g_strTempDirName;
+    m_process.setWorkingDirectory(strWoringDir);
+
+    QStringList lstArgs = {"a", strDstFilePath, "-r"};
+    m_process.setArguments(lstArgs);
+
+    m_process.start(QIODevice::ReadOnly);
+}
+
+void main_win::PrintLog(const QString &strLog)
+{
+    if (m_bNoUi)
+    {
+        qDebug() << strLog;
+    }
+    else
+    {
+        ui->edtLog->appendPlainText(strLog);
+    }
+}
+
+void main_win::on_btnBrowser_clicked()
+{
+    QStringList lstDir = QStandardPaths::standardLocations(QStandardPaths::DesktopLocation);
+    QString strDir = lstDir.empty() ?"." : lstDir.first();
+    QString strFilePath = QFileDialog::getOpenFileName(this, "open",  strDir);
+
+    ui->edtFilePath->setText(strFilePath);
+    m_strFilePath = strFilePath;
+}
+
+bool main_win::ConvertSkp2Cim(const QString &strSkpFilePath)
+{
+    QString strAppDir = QCoreApplication::applicationDirPath();
+    m_process.setWorkingDirectory(strAppDir);
+
+    QString strExePath = strAppDir + "/" + g_strConvertorProgramName;
+    m_process.setProgram(strExePath);
+
+    QDir dirApp(strAppDir);
+    if (dirApp.exists(g_strTempDirName))
+    {
+        QDir dirTmp(strAppDir + "/" + g_strTempDirName);
+        dirTmp.removeRecursively();
+    }
+    dirApp.mkdir(g_strTempDirName);
+
+    QString strDstDir = strAppDir + "/" + g_strTempDirName;
+    QStringList lstArgs = {strSkpFilePath, "--destination="+strDstDir};
+    m_process.setArguments(lstArgs);
+
+    m_process.start(QIODevice::ReadOnly);
+
+    return true;
+}
+
+void main_win::Init(const QString& strFilePath)
+{
     connect(&m_process, &QProcess::errorOccurred, this, [&](QProcess::ProcessError error){
         static QMap<QProcess::ProcessError, QString> mapErrors = {
             {QProcess::FailedToStart, "The process failed to start. Either the invoked program is missing, or you may have insufficient permissions to invoke the program."},
@@ -29,7 +110,7 @@ main_win::main_win(QString strFilePath, QWidget *parent)
             {QProcess::UnknownError, "An unknown error occurred. This is the default return value of error()."}
         };
 
-        ui->edtLog->appendPlainText(mapErrors[error]);
+        PrintLog(mapErrors[error]);
     });
 
     connect(&m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
@@ -46,10 +127,11 @@ main_win::main_win(QString strFilePath, QWidget *parent)
             }
             else if (m_process.program().endsWith(g_strCompressProgramName))
             {
-                QFileInfo fi(ui->edtFilePath->text());
+                QFileInfo fi(m_strFilePath);
+				QString strDstDir = (m_strDstDir.isEmpty() ? fi.dir().path() : m_strDstDir);
                 QString strFileName = fi.fileName();
-                QString strTmpDstFilePath = fi.dir().path() + "/" + strFileName + ".zip";
-                QString strDstFilePath = fi.dir().path() + "/" + strFileName + g_strDstFileExt;
+                QString strTmpDstFilePath = strDstDir + "/" + strFileName + ".zip";
+                QString strDstFilePath = strDstDir + "/" + strFileName + g_strDstFileExt;
                 if (QFile::exists(strTmpDstFilePath))
                 {
                     if (QFile::exists(strDstFilePath))
@@ -58,13 +140,22 @@ main_win::main_win(QString strFilePath, QWidget *parent)
                     }
 
                     QFile::rename(strTmpDstFilePath, strDstFilePath);
-                    QDesktopServices::openUrl(QUrl("file:///" + fi.dir().path()));
+
+					if (m_bNoUi)
+					{
+						qApp->exit(0);
+					}
+                    else
+                    {
+						QDesktopServices::openUrl(QUrl("file:///" + fi.dir().path()));
+                    }
                 }
+
             }
         }
             break;
         case QProcess::CrashExit:
-            ui->edtLog->appendPlainText("The process crashed.");
+            PrintLog("The process crashed.");
             break;
         default:
             break;
@@ -72,15 +163,15 @@ main_win::main_win(QString strFilePath, QWidget *parent)
     });
 
     connect(&m_process, &QProcess::readyReadStandardOutput, this, [&](){
-        ui->edtLog->appendPlainText(m_process.readAllStandardOutput());
+        PrintLog(m_process.readAllStandardOutput());
     });
 
     connect(&m_process, &QProcess::readyReadStandardError, this, [&](){
-        ui->edtLog->appendPlainText(m_process.readAllStandardError());
+        PrintLog(m_process.readAllStandardError());
     });
 
     connect(&m_process, &QProcess::started, this, [&](){
-        ui->edtLog->appendPlainText("the process has started.");
+        PrintLog("the process has started.");
     });
 
     connect(&m_process, &QProcess::stateChanged, this, [&](QProcess::ProcessState newState){
@@ -90,43 +181,10 @@ main_win::main_win(QString strFilePath, QWidget *parent)
             {QProcess::Running, "The process is running and is ready for reading and writing."}
         };
 
-        ui->edtLog->appendPlainText(mapState[newState]);
+        PrintLog(mapState[newState]);
     });
 
-    ui->edtFilePath->setText(strFilePath);
-}
-
-main_win::~main_win()
-{
-    delete ui;
-}
-
-void main_win::Compress2Cim()
-{
-    QFileInfo fi(ui->edtFilePath->text());
-    QString strFileName = fi.fileName();
-    QString strDstFilePath = fi.dir().path() + "/" + strFileName + ".zip";
-
-    QString strAppDir = QApplication::applicationDirPath();
-    QString strApp7z = strAppDir + "/" + g_strCompressProgramName;
-    m_process.setProgram(strApp7z);
-
-    QString strWoringDir = strAppDir + "/" + g_strTempDirName;
-    m_process.setWorkingDirectory(strWoringDir);
-
-    QStringList lstArgs = {"a", strDstFilePath, "-r"};
-    m_process.setArguments(lstArgs);
-
-    m_process.start(QIODevice::ReadOnly);
-}
-
-void main_win::on_btnBrowser_clicked()
-{
-    QStringList lstDir = QStandardPaths::standardLocations(QStandardPaths::DesktopLocation);
-    QString strDir = lstDir.empty() ?"." : lstDir.first();
-    QString strFilePath = QFileDialog::getOpenFileName(this, "open",  strDir);
-
-    ui->edtFilePath->setText(strFilePath);
+    if (!m_bNoUi) ui->edtFilePath->setText(strFilePath);
 }
 
 void main_win::on_btnConvertor_clicked()
@@ -138,23 +196,5 @@ void main_win::on_btnConvertor_clicked()
         return;
     }
 
-    QString strAppDir = QApplication::applicationDirPath();
-    m_process.setWorkingDirectory(strAppDir);
-
-    QString strExePath = strAppDir + "/" + g_strConvertorProgramName;
-    m_process.setProgram(strExePath);
-
-    QDir dirApp(strAppDir);
-    if (dirApp.exists(g_strTempDirName))
-    {
-        QDir dirTmp(strAppDir + "/" + g_strTempDirName);
-        dirTmp.removeRecursively();
-    }
-    dirApp.mkdir(g_strTempDirName);
-
-    QString strDstDir = strAppDir + "/" + g_strTempDirName;
-    QStringList lstArgs = {strFilePath, "--destination="+strDstDir};
-    m_process.setArguments(lstArgs);
-
-    m_process.start(QIODevice::ReadOnly);
+    ConvertSkp2Cim(strFilePath);
 }
